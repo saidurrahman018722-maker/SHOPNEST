@@ -50,19 +50,7 @@ export const UserRegistration = async (req,res)=>{
             message: "User registered successfully! Please check your email for the OTP.",
             userId: user.id
         });
-
-
-
-
-    // if(user.verified===false){
-    //     return res.status(400).json({
-    //         message:"user not verified."
-    //     })
-    // }
-     
-
         
-
 }
 
 export const OptVerification = async (req,res)=>{
@@ -110,7 +98,7 @@ export const OptVerification = async (req,res)=>{
         const hasshedRefreshToken = crypto.createHash('sha256').update(refreshToken).digest('hex');
             const sessionExpiryDate = new Date();
             sessionExpiryDate.setDate(sessionExpiryDate.getDate() + 60);
-             await prisma.session.create({
+            const session =  await prisma.session.create({
             data:{
                 userId:user.id,
                 sessionToken:hasshedRefreshToken,
@@ -119,7 +107,8 @@ export const OptVerification = async (req,res)=>{
                 expiresAt:sessionExpiryDate
             }
         })
-         const accessToken = jwt.sign({id:user.id,sessionToken:hasshedRefreshToken},process.env.JWT_ACESS_SECRET,{
+
+         const accessToken = jwt.sign({id:user.id,sessionId:session.id},process.env.JWT_ACESS_SECRET,{
             expiresIn:"10m"
         });
 
@@ -199,21 +188,22 @@ export const login = async (req,res)=>{
         })
     }
 
-    const refreshToken = generateRefreshToken(user.id,res);
+    const refreshToken = await generateRefreshToken(user.id,res);
     const hasshedRefreshToken = crypto.createHash('sha256').update(refreshToken).digest('hex');
     
-
-         await prisma.session.create({
+        const sessionExpiryDate = new Date();
+        sessionExpiryDate.setDate(sessionExpiryDate.getDate() + 60);
+        const session =  await prisma.session.create({
          data:{
                 userId:user.id,
                 sessionToken:hasshedRefreshToken,
                 ipAddress: req.ip,
                 userAgent: req.headers['user-agent'],
-                expiresAt:'60d'
+                expiresAt: sessionExpiryDate
             }
     })
 
-    const accessToken = jwt.sign({id:user.id,sessionToken:hasshedRefreshToken},process.env.JWT_ACESS_SECRET,{
+    const accessToken = jwt.sign({id:user.id,sessionId:session.id},process.env.JWT_ACESS_SECRET,{
         expiresIn:"10m"
     })
 
@@ -230,51 +220,82 @@ export const login = async (req,res)=>{
 }
 
 
-export const accessToken = async (req,res)=>{
-    const refreshToken = req.cookies.refreshToken;
-    if(!refreshToken){
+export const accessToken = async (req, res) => {
+    try {
+        const refreshToken = req.cookies.refreshToken;
+        
+        if (!refreshToken) {
+            return res.status(401).json({
+                message: "Unauthorized: No refresh token."
+            });
+        }
+        const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET);
+
+        // FIX 2: Hash the incoming token so we can find its specific session in the DB
+        const hasshedRefreshToken = crypto
+            .createHash('sha256')
+            .update(refreshToken)
+            .digest('hex');
+
+        // Verify this exact session exists before doing anything else
+        const activeSession = await prisma.session.findFirst({
+            where: {
+                userId: decoded.id, 
+                sessionToken: hasshedRefreshToken
+            }
+        });
+
+        if (!activeSession) {
+            return res.status(401).json({
+                message: "Unauthorized: Session invalid or already rotated."
+            });
+        }
+
+        // Generate the new refresh token (assuming this function attaches the cookie to 'res')
+        const newRefreshToken = generateRefreshToken(activeSession.userId, res);
+        
+        const hashedNewRefreshToken = crypto
+            .createHash('sha256')
+            .update(newRefreshToken)
+            .digest('hex');
+
+        // FIX 3: Update the session by its unique 'id', NOT 'userId'. 
+        // If you update by userId, you will overwrite the user's phone session 
+        // when they refresh on their laptop!
+        const updatedSession = await prisma.session.update({
+            where: {
+                id: activeSession.id 
+            },
+            data: {
+                sessionToken: hashedNewRefreshToken
+            }
+        });
+
+        // Generate the new Access Token containing both IDs
+        const newAccessToken = jwt.sign(
+            { 
+                id: activeSession.userId, 
+                sessionId: activeSession.id 
+            }, 
+            process.env.JWT_ACESS_SECRET, 
+            { expiresIn: "10m" }
+        );
+
+        return res.status(200).json({
+            message: "Access token successfully generated",
+            data: {
+                accessToken: newAccessToken
+            }
+        });
+
+    } catch (error) {
+       
         return res.status(401).json({
-            message:"Unauthorized No refresh token."
-        })
+            message: "Unauthorized: Invalid or expired refresh token."
+        });
     }
-    const verifyRefreshToken = jwt.verify(refreshToken,process.env.JWT_SECRET);
-
-    if(!verifyRefreshToken){
-        return res.status(401).json({
-            message:"Unauthorized"
-        })
-    }
-    const user = await prisma.user.findUnique({
-        where:{
-            id:verifyRefreshToken.id
-        }
-    })
-
-    const newRefreshToken = generateRefreshToken(user.id,res);
-    const hasshedNewRefreshToken = crypto.createHash('sha256').update(newRefreshToken).digest('hex');
-
-    await prisma.session.update({
-        where:{
-            userId:user.id
-        },
-        data:{
-            sessionToken:hasshedNewRefreshToken
-        }
-    })
-
-
-    const accessToken = jwt.sign({id:user.id,sessionToken:hasshedNewRefreshToken},process.env.JWT_ACESS_SECRET,{
-        expiresIn:"10m"
-    })
-
-    res.status(200).json({
-        message:"access token sucessfully generated",
-        data:{
-            accessToken
-        }
-    })
-      
 }
+
 
 
 export const logout = async (req,res)=>{

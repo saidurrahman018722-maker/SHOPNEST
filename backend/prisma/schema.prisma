@@ -65,3 +65,17 @@ model Session {
 }
 
 
+model Product {
+  id          String   @id @default(uuid())
+  name        String
+  description String
+  price       Float    
+  category    String
+  stock       Int      
+  images      String[] 
+  createdAt   DateTime @default(now())
+  rating      Float    @default(0)
+  numReviews  Int      @default(0)
+}
+
+
