@@ -1,0 +1,67 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client-js"
+// output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id String @id @default(uuid())
+  name String
+  email String @unique
+  password String
+  verified Boolean @default(false)
+  role Role @default(user)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  sessions Session[]
+  opts Otp[]
+
+}
+
+enum Role {
+  user
+  admin
+}
+
+
+model Otp {
+  id        String   @id @default(uuid())
+  code      String  @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      OtpType  @default(EMAIL_VERIFICATION)
+  createdAt DateTime @default(now())
+  expiresAt DateTime 
+
+  @@index([userId]) 
+}
+
+enum OtpType {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+  TWO_FACTOR_AUTH
+}
+
+model Session {
+  id           String   @id @default(uuid())
+  sessionToken String   @unique @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userAgent    String?  // Stores browser/device info (e.g., "Chrome on MacOS")
+  ipAddress    String?  // Stores client IP address
+  createdAt    DateTime @default(now())
+  revoked      Boolean  @default(false) 
+  expiresAt    DateTime // Timestamp when the session becomes invalid
+
+  @@index([userId]) // Indexes userId for faster lookups when querying a user's sessions
+}
+
+
