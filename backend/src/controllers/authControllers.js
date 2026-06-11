@@ -210,7 +210,6 @@ export const login = async (req,res)=>{
     res.status(200).json({
         message:"user logged in successfully",
         data:{
-        accessToken,
       id:user.id,
       name:user.name,
       email:user.email,
@@ -241,7 +240,8 @@ export const accessToken = async (req, res) => {
         const activeSession = await prisma.session.findFirst({
             where: {
                 userId: decoded.id, 
-                sessionToken: hasshedRefreshToken
+                sessionToken: hasshedRefreshToken,
+                revoked: false
             }
         });
 
@@ -264,14 +264,15 @@ export const accessToken = async (req, res) => {
         // when they refresh on their laptop!
         const updatedSession = await prisma.session.update({
             where: {
-                id: activeSession.id 
+                id: activeSession.id,
+                revoked: false
             },
             data: {
                 sessionToken: hashedNewRefreshToken
             }
         });
 
-        // Generate the new Access Token containing both IDs
+       
         const newAccessToken = jwt.sign(
             { 
                 id: activeSession.userId, 
@@ -297,39 +298,49 @@ export const accessToken = async (req, res) => {
 }
 
 
+export const logout = async (req, res) => {
+    try {
+        const refreshToken = req.cookies.refreshToken;
+        
+        if (!refreshToken) {
+            res.clearCookie('refreshToken');
+            return res.status(200).json({
+                message: "User logged out successfully."
+            });
+        }
 
-export const logout = async (req,res)=>{
-    const refreshToken = req.cookies.refreshToken;
-    if(!refreshToken){
-        return res.status(401).json({
-            message:"Unauthorized No refresh token."
-        })
+        const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET);
+        
+        const hashedRefreshToken = crypto
+            .createHash('sha256')
+            .update(refreshToken)
+            .digest('hex');
+
+        await prisma.session.updateMany({
+            where: {
+                userId: decoded.id,
+                sessionToken: hashedRefreshToken
+            },
+            data: {
+                revoked: true 
+            }
+         
+        });
+
+        res.clearCookie('refreshToken', {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+        });
+
+        return res.status(200).json({
+            message: "User logged out successfully"
+        });
+
+    } catch (error) {
+        res.clearCookie('refreshToken');
+        
+        return res.status(200).json({
+            message: "User logged out successfully (token was expired)."
+        });
     }
-      const userExits = jwt.verify(refreshToken,process.env.JWT_SECRET);
-        if(!userExits){
-            return res.status(401).json({
-                message:"Unauthorized"
-            })
-        }
-        hasshedRefreshToken = crypto.createHash('sha256').update(refreshToken).digest('hex');
-
-
-        await prisma.session.update({
-        where:{
-            userId:userExits.id,
-            sessionToken:hasshedRefreshToken
-        },
-        data:{
-            revoked:true
-        }
-    })
-    res.clearCookie('refreshToken');
-
-    res.status(200).json({
-        message:"user logged out successfully"
-    })
-
-
-   
-    
-}
+};

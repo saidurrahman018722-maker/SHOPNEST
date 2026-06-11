@@ -6,7 +6,7 @@ export const generateRefreshToken = async (userId,res)=>{
         expiresIn:"7d"
     
     })
-    res.cookie('jwt',token,{
+    res.cookie('refreshToken',token,{
         httpOnly:true,
         secure:process.env.NODE_ENV !== 'development',
         sameSite:'strict',
