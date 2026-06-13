@@ -1,29 +1,9 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
   provider = "prisma-client-js"
-// output   = "../generated/prisma"
 }
 
 datasource db {
-  provider = "postgresql"
-}
-
-model User {
-  id String @id @default(uuid())
-  name String
-  email String @unique
-  password String
-  verified Boolean @default(false)
-  role Role @default(user)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  sessions Session[]
-  opts Otp[]
-
+  provider  = "postgresql"
 }
 
 enum Role {
@@ -31,10 +11,36 @@ enum Role {
   admin
 }
 
+enum OtpType {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+  TWO_FACTOR_AUTH
+}
+
+enum OrderStatus {
+  pending
+  shipped
+  delivered
+}
+model User {
+  id        String    @id @default(uuid())
+  name      String
+  email     String    @unique
+  password  String
+  verified  Boolean   @default(false)
+  role      Role      @default(user)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  
+  // Relations
+  sessions  Session[]
+  opts      Otp[]
+  orders    Order[]   // <-- Added: Links User to their Orders
+}
 
 model Otp {
   id        String   @id @default(uuid())
-  code      String  @unique
+  code      String   @unique
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   type      OtpType  @default(EMAIL_VERIFICATION)
@@ -44,38 +50,79 @@ model Otp {
   @@index([userId]) 
 }
 
-enum OtpType {
-  EMAIL_VERIFICATION
-  PASSWORD_RESET
-  TWO_FACTOR_AUTH
-}
-
 model Session {
   id           String   @id @default(uuid())
   sessionToken String   @unique @default(uuid())
   userId       String
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userAgent    String?  // Stores browser/device info (e.g., "Chrome on MacOS")
+  userAgent    String?  // Stores browser/device info
   ipAddress    String?  // Stores client IP address
   createdAt    DateTime @default(now())
   revoked      Boolean  @default(false) 
-  expiresAt    DateTime // Timestamp when the session becomes invalid
+  expiresAt    DateTime
 
-  @@index([userId]) // Indexes userId for faster lookups when querying a user's sessions
+  @@index([userId])
 }
 
-
 model Product {
-  id          String   @id @default(uuid())
+  id          String      @id @default(uuid())
   name        String
   description String
   price       Float    
   category    String
   stock       Int      
-  images      String[] 
-  createdAt   DateTime @default(now())
-  rating      Float    @default(0)
-  numReviews  Int      @default(0)
+  imageUrl    String
+  createdAt   DateTime    @default(now())
+  rating      Float       @default(0)
+  numReviews  Int         @default(0)
+  
+  // Relations
+  orderItems  OrderItem[] // <-- Added: Links Product to Order Items
 }
 
+// ---------------------------------------------------------
+// E-COMMERCE (Orders)
+// ---------------------------------------------------------
 
+model Order {
+  id          String      @id @default(uuid())
+  
+  // User Relation
+  userId      String
+  user        User        @relation(fields: [userId], references: [id])
+  
+  // Order Details
+  totalAmount Float
+  paymentId   String
+  status      OrderStatus @default(pending)
+
+  // Flattened Address Fields
+  addressFullName   String
+  addressStreet     String
+  addressCity       String
+  addressPostalCode String
+  addressCountry    String
+
+  // Timestamps
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relation for Items
+  items       OrderItem[]
+}
+
+model OrderItem {
+  id        String  @id @default(uuid())
+  
+  // Order Relation
+  orderId   String
+  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  // Product Relation
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+
+  // Item Details
+  qty       Int     
+  price     Float
+}

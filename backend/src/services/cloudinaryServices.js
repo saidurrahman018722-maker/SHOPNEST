@@ -1,32 +1,25 @@
 // cloudinaryService.js
-import cloudinary from './cloudinaryConfig.js';
-import fs from 'fs';
+import cloudinary from '../config/cloudinaryConfig.js'
 
-/**
- * Uploads a file to Cloudinary and removes the local copy.
- * @param {string} localFilePath - The absolute path to the local file.
- * @returns {Object|null} - Returns the Cloudinary response object or null on failure.
- */
-export const uploadOnCloudinary = async (localFilePath) => {
-    try {
-        if (!localFilePath) return null;
+export const uploadOnCloudinary = async (fileBuffer) => {
+    // Because streams are callback-based, we wrap it in a Promise so you can still use 'await' in your controller
+    return new Promise((resolve, reject) => {
+        if (!fileBuffer) return resolve(null);
 
-        // Upload the file to Cloudinary
-        const response = await cloudinary.uploader.upload(localFilePath, {
-            resource_type: "auto" // Automatically detects if it is an image, video, or raw file
-        });
+        // CRITICAL FIX: Use upload_stream instead of upload
+        const uploadStream = cloudinary.uploader.upload_stream(
+            { resource_type: "auto", folder: "shopnest" }, 
+            (error, result) => {
+                if (error) {
+                    console.error("Cloudinary Stream Error:", error);
+                    return resolve(null);
+                }
+                // Success! Return the Cloudinary URL object
+                resolve(result);
+            }
+        );
 
-        // Upload successful: delete the temporary local file
-        fs.unlinkSync(localFilePath);
-        
-        return response; // Contains response.url, response.public_id, etc.
-
-    } catch (error) {
-        // If the upload fails, ensure we still delete the corrupted/un-uploaded local file
-        if (fs.existsSync(localFilePath)) {
-            fs.unlinkSync(localFilePath);
-        }
-        console.error("Cloudinary Upload Error:", error);
-        return null;
-    }
-}
+        // This actually fires the buffer data to Cloudinary
+        uploadStream.end(fileBuffer);
+    });
+};
